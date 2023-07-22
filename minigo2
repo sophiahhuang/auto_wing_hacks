@@ -1,0 +1,96 @@
+# Setup environment variables
+import os 
+from apikey import apikey 
+
+import streamlit as st 
+from langchain.llms import OpenAI
+from langchain.prompts import PromptTemplate
+from langchain.chains import LLMChain, SimpleSequentialChain 
+from langchain.memory import ConversationBufferMemory
+from langchain.utilities import GoogleSerperAPIWrapper
+from langchain.agents import initialize_agent, Tool
+from langchain.agents import AgentType
+
+os.environ['OPENAI_API_KEY'] = ""
+os.environ["SERPER_API_KEY"] = ""
+
+if (os.environ.get("OPENAI_API_KEY") == ""):
+    raise Exception("Please set the environment variable OPENAI_API_KEY")
+
+# App framework
+st.title('MiniMeGo 🛍️🏁💨')
+prompt = st.text_input('Buy this stuff (name or URL)')
+
+# prompt templates
+
+search = GoogleSerperAPIWrapper()
+#results = search.results(prompt)
+
+# search
+# Provide a search functionality where users can specify product they want to buy
+# input can be product name/description, URL (TBD), image (TBD)
+search_template = PromptTemplate(
+    input_variables = ['google_search'],
+    template = '''
+    Act as a smart shopping assistant. 
+    Search product name that is well reviewed with high customer rating or Better Business 
+    Bureau ranking while leveraging google search: {google_search}.
+    Do not fabricate or create new product names or online store.'''
+)
+
+# Retrieve the prices, metadata, site links of the desired product from Google Serper API
+prices_template = PromptTemplate(
+    input_variables = ['all_prices'],
+    template = '''
+    Retreive metadata of the product name by searching online. 
+
+    Scrap metadata related to the product, include name of store, 
+    contact info, prices, image, size, color, variety, in stock
+    or out of stock availability, description, or any options of the product
+    and put into {all_prices} from various credible online sources or popular APIs. 
+    Use optimized, efficient web scraping techniques. 
+''')
+
+rec_template = PromptTemplate(
+    input_variables = ['all_metadata'],
+    template = '''
+    Recommend the best products to the user {all_metadata} by comparing the price, quality rating, 
+    and availability and display in a user-friendly table format. 
+    '''
+)
+
+
+# Memory 
+search_memory = ConversationBufferMemory(input_key='google_search', memory_key='chat_history')
+prices_memory = ConversationBufferMemory(input_key='all_prices', memory_key='chat_history')
+rec_memory = ConversationBufferMemory(input_key='all_metadata', memory_key='chat_history')
+
+
+# Llms
+llm = OpenAI(temperature=0.9) 
+search_chain = LLMChain(llm=llm, prompt=search_template, verbose=True, output_key='all_prices', memory=search_memory)
+prices_chain = LLMChain(llm=llm, prompt=prices_template, verbose=True, output_key='all_metadata', memory=prices_memory)
+rec_chain = LLMChain(llm=llm, prompt=rec_template, verbose=True, output_key='all_rec', memory=rec_memory)
+##sequential_chain = SimpleSequentialChain(chains=[search_chain, prices_chain, rec_chain], verbose = True)
+
+# Show stuff to the screen if there's a prompt
+if prompt: 
+    all_prices = search_chain.run(prompt)
+    google_search = search.run(prompt) 
+    rec_chain = rec_chain.run(all_prices = all_prices)
+
+    st.write(all_prices) 
+    st.write(all_metadata)
+    st.write(all_rec) 
+
+    with st.expander('Search History'): 
+        st.info(search_memory.buffer)
+
+    with st.expander('Prices History'): 
+        st.info(prices_memory.buffer)
+
+    with st.expander('Rec History'): 
+        st.info(rec_memory.buffer)
+
+    #with st.expander('Google Serper'): 
+    #    st.info(google_serper_results)
